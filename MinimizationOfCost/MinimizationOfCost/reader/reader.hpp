@@ -47,7 +47,9 @@ Matrix<int> Reader::fileToMatrix(std::string path) {
         std::stringstream ss(line);
         std::string cell;
 
-        while (std::getline(ss, cell, separator[0])) row.push_back(std::stoi(cell));
+        while (std::getline(ss, cell, separator[0])) {
+            row.push_back(std::stoi(cell));
+        }
 
         if (!tempMatrix.empty() && row.size() != tempMatrix[0].size()) {
             throw std::runtime_error("Matrix is not square - row size mismatch");

@@ -1,0 +1,4 @@
+Not enough arguments provided. Please provide 4 arguments.
+The signature of this func is 
+extract.exe <input file> <output file> <start position> <fragment size>
+

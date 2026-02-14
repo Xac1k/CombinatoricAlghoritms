@@ -1,0 +1,3 @@
+Enter the weights and costs of items inline in format '(n, c)'. Enter 'q' for end: 
+Enter limitations by weight: 
+There isn't combinations for packing with limitations.

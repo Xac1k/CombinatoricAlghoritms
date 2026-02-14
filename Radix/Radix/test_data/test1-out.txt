@@ -1,0 +1,3 @@
+Error: Not enough arguments provided. Please provide at least 3 argument.
+The signature of this func is 
+radix.exe <source notation> <destination notation> <value>

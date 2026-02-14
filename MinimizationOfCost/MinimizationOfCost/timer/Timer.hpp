@@ -3,33 +3,45 @@
 #include <iostream>
 #include <string>
 #include <type_traits>
+#include <cmath>
 
 class Timer
 {
 public:
-	void setTimePoint() {
-		if (pointID == 0) {
-			start = std::chrono::high_resolution_clock::now();
-			pointID++;
-		}
-		if (pointID == 1) {
-			end = std::chrono::high_resolution_clock::now();
-			pointID = 0;
-		}
+	void start() {
+		startPoint = std::chrono::high_resolution_clock::now();
 	}
 
-	template<typename T>
-	requires std::is_same_v<T, std::chrono::milliseconds> ||
-			std::is_same_v<T, std::chrono::seconds> ||
-			std::is_same_v<T, std::chrono::microseconds>
+	void end() {
+		endPoint = std::chrono::high_resolution_clock::now();
+	}
 
 	void printDuration(std::string LetterBefore) {
-		auto duration = std::chrono::duration_cast<T>(end - start);
-		std::cout << LetterBefore << duration.count() << std::endl;
+		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endPoint - startPoint);
+		seconds = (double)duration.count() / 1000;
+		std::cout << LetterBefore << seconds << std::endl;
+	}
+
+	void estimate(int nWish, int nCurr) {
+		factorial(nCurr, nWish);
+
+
 	}
 
 private:
 	int pointID = 0;
-	std::chrono::steady_clock::time_point start;
-	std::chrono::steady_clock::time_point end;
+	std::chrono::steady_clock::time_point startPoint;
+	std::chrono::steady_clock::time_point endPoint;
+	long double seconds = 0;
+
+	long long timeOfEarth = 4.54 * std::pow(10, 9);
+	long long timeOfUniverse = 13.8 * std::pow(10, 9);
+
+	unsigned long int factorial(unsigned int from, unsigned int to)
+	{
+		int res = 1, i;
+		for (i = from; i <= to + 1; i++)
+			res *= i;
+		return res;
+	}
 };

@@ -1,0 +1,3 @@
+Failed to open input file: C:\Users\Xac1k\source\repos\ExtractorFromFile\ExtractorFromFile\.\test_data\test2.txt
+or failed to open output file: C:\Users\Xac1k\source\repos\ExtractorFromFile\ExtractorFromFile\.\test-out_res.txt
+
