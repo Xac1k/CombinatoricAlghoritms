@@ -171,15 +171,13 @@ void Decode(std::shared_ptr<Arguments> arg) {
 
     while (arg->iFile.read(reinterpret_cast<char*>(&count), 1) &&
         arg->iFile.read(reinterpret_cast<char*>(&byte), 1)) {
-        if (arg->iFile.gcount() != 1) {
+        if (arg->iFile.gcount() != 1)
             throw std::runtime_error("Unexpected end of file while reading RLE pair");
-        }
         for (int i = 0; i < count; i++) arg->oFile.put(static_cast<char>(byte));
     }
 
-    if (arg->iFile.bad()) {
+    if (arg->iFile.bad()) 
         throw std::runtime_error("Error reading input file");
-    }
 }
 
 int main(int argc, char * argv[])
