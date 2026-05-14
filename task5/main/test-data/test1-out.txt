@@ -1,0 +1,4 @@
+Enter the weights and costs of items inline in format '(n, c)'. Enter 'q' for end: 
+Enter limitations by weight: 
+Result weight: 0
+Result cost: 0

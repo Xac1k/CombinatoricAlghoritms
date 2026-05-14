@@ -1,0 +1,3 @@
+/home/xac1k/Desktop/CA/task3/tests/build/CMakeFiles/test.dir
+/home/xac1k/Desktop/CA/task3/tests/build/CMakeFiles/edit_cache.dir
+/home/xac1k/Desktop/CA/task3/tests/build/CMakeFiles/rebuild_cache.dir
