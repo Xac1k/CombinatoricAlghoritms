@@ -1,236 +1,337 @@
-// SteinerOptimalTreeFinder.cpp
-#include "SteineResolver.h"
-#include "Utils/Steiner.h"
-#include <algorithm>
-#include <numeric>
-#include <deque>
+#pragma once
+
+#include "./SteineResolver.h"
+
 #include <cfloat>
 #include <cmath>
+#include <iostream>
+#include <queue>
+#include "Utils/Steiner.h"
 
-
-
-// ─── геометрия ───────────────────────────────────────────────
-
-static double Dist(const CPoint& a, const CPoint& b) {
-    const double dx = a.x - b.x, dy = a.y - b.y;
-    return std::sqrt(dx*dx + dy*dy);
+CPoint IPoint::GetPoint() const {
+    return m_point;
 }
 
-// Вершина равностороннего треугольника на AB,
-// противоположная стороне refPoint — та же логика что в BuildEquilateralTriangle.
-// Нужна для фазы слияния: виртуальная точка V заменяет пару (A, B).
-static CPoint EquilateralVertex(const CPoint& A, const CPoint& B,
-                                 const CPoint& refPoint) {
-    const CPoint mid   = (A + B) / 2.0;
-    const CVector v    = CVector(B - A);
-    const double  h    = v.dist() * std::sqrt(3.0) / 2.0;
-    CVector perp       = { -v.y, v.x };
-    perp /= perp.dist();
-
-    const CPoint c1 = { mid.x + perp.x * h, mid.y + perp.y * h };
-    const CPoint c2 = { mid.x - perp.x * h, mid.y - perp.y * h };
-
-    // выбираем сторону, противоположную refPoint
-    return (Dist(c1, refPoint) > Dist(c2, refPoint)) ? c1 : c2;
+void IPoint::SetPoint(const CPoint p) {
+    m_point = p;
 }
 
-// ─── топологии ───────────────────────────────────────────────
-// Топология = порядок слияний троек индексов.
-// Для n терминалов нужно n-2 точек Штейнера, т.е. n-2 слияния.
-// Каждое слияние потребляет 3 «живых» узла и порождает 1 виртуальный.
-// Живых узлов: n → n-2 → ... → 2 (последние два соединяются ребром).
-//
-// Слияние задаётся тройкой индексов (i, j, k) в текущем рабочем векторе.
-// Фиксируем i=0 на каждом шаге (убирает дубли от перестановок).
+void SteinerPoint::SetChild(const SharedPoint &p1, const SharedPoint &p2, const SharedPoint &p3) {
+    m_p1 = p1;
+    m_p2 = p2;
+    m_p3 = p3;
+}
 
-struct Merge { size_t i, j, k; };
-using Topology = std::vector<Merge>;
+void VirtualPoint::SetUnwrapping(const SharedSteinerPoint &sp) {
+    m_unwrappingPoint = sp;
+}
 
-static void GenTopologies(std::vector<size_t> alive,
-                          Topology current,
-                          std::vector<Topology>& out) {
-    if (alive.size() == 2) {
-        out.push_back(current);
-        return;
-    }
-    // фиксируем alive[0], перебираем пары партнёров
-    for (size_t j = 1; j < alive.size(); ++j) {
-        for (size_t k = j + 1; k < alive.size(); ++k) {
-            Topology next = current;
-            next.push_back({ alive[0], alive[j], alive[k] });
+void Edge::SetStartPoint(CPoint p) {
+    p1 = p;
+}
 
-            // новый рабочий вектор: убираем j и k, alive[0] → виртуальная точка
-            std::vector<size_t> nextAlive;
-            nextAlive.push_back(alive[0]); // слот 0 = новая виртуальная точка
-            for (size_t m = 1; m < alive.size(); ++m)
-                if (m != j && m != k)
-                    nextAlive.push_back(alive[m]);
+void Edge::SetEndPoint(CPoint p) {
+    p2 = p;
+}
 
-            GenTopologies(nextAlive, next, out);
+double Edge::GetLength() const {
+    return CVector(p2 - p1).dist();
+}
+
+CPoint Edge::GetStartPoint() const {
+    return p1;
+}
+
+CPoint Edge::GetEndPoint() const {
+    return p2;
+}
+
+SteinerPoint::SharedPoint SteinerPoint::GetChild(const short id) {
+    if (id == 1) return m_p1;
+    if (id == 2) return m_p2;
+    if (id == 3) return m_p3;
+
+    throw std::out_of_range("");
+}
+
+VirtualPoint::SharedSteinerPoint VirtualPoint::GetUnwrapping() {
+    return m_unwrappingPoint;
+}
+
+std::tuple<DegeneratedPoint::SharedPoint, DegeneratedPoint::SharedPoint> DegeneratedPoint::GetUnwrapping() {
+    return std::make_tuple(m_p1, m_p2);
+}
+
+void DegeneratedPoint::SetUnwrapping(const SharedPoint &p1, const SharedPoint &p2) {
+    m_p1 = p1;
+    m_p2 = p2;
+}
+
+template <typename T>
+std::shared_ptr<T> GetShared(const T& item) {
+    return std::make_shared<T>(item);
+}
+
+template <typename T>
+bool IsNullOpt(std::optional<T> item) {
+    return !item.has_value();
+}
+
+double angleAt(const CPoint& vertex, const CPoint& a, const CPoint& b) {
+    CVector v1 = a - vertex;
+    CVector v2 = b - vertex;
+    double dot = v1.x * v2.x + v1.y * v2.y;
+    double mag = v1.dist() * v2.dist();
+    return std::acos(dot / mag) * 180.0 / M_PI;
+}
+
+int findMiddle(const CPoint& p1, const CPoint& p2, const CPoint& p3) {
+    double a1 = angleAt(p1, p2, p3);
+    double a2 = angleAt(p2, p1, p3);
+    double a3 = angleAt(p3, p1, p2);
+    if (a1 >= a2 && a1 >= a3) return 1;
+    if (a2 >= a1 && a2 >= a3) return 2;
+    return 3;
+}
+
+std::vector<std::tuple<size_t, size_t>> getCombinations(size_t n) {
+    if (n < 1) return {};
+
+    std::vector<std::tuple<size_t, size_t>> result;
+    result.reserve((n + 1) * n * (n - 1) / 6);
+
+    for (int i = 0; i <= n - 1; i++) {
+        for (int j = i + 1; j <= n; j++) {
+            result.emplace_back(i, j);
         }
     }
-}
 
-static std::vector<Topology> AllTopologies(size_t n) {
-    if (n < 3) return {{}};
-    std::vector<size_t> alive(n);
-    std::iota(alive.begin(), alive.end(), 0);
-    std::vector<Topology> result;
-    GenTopologies(alive, {}, result);
     return result;
 }
 
-struct MelzakResult {
-    std::vector<CPoint> steinerPoints;
-    double length;
-};
+std::vector<std::shared_ptr<Graph>> BuildAllPermutationsOfTask(const std::shared_ptr<Graph>& graph) {
+    std::vector<std::shared_ptr<Graph>> result;
+    std::vector<std::pair<size_t, std::shared_ptr<IPoint>>> filteredNodes = {};
 
-struct MergeRecord {
-    CPoint A, B, C;
-    CPoint virtualPt;
-};
-
-static std::optional<MelzakResult> MelzakFST(
-        const std::vector<CPoint>& terminals,
-        const Topology& topology) {
-
-    // рабочий вектор координат (по значению — нет проблем с lifetime)
-    std::vector<CPoint> work(terminals);
-
-    std::vector<MergeRecord> history;
-    history.reserve(topology.size());
-
-    // ── фаза слияния ──
-    for (const auto& merge : topology) {
-        CPoint& A = work[merge.i];
-        CPoint& B = work[merge.j];
-        CPoint& C = work[merge.k];
-
-        const CPoint V = EquilateralVertex(A, B, C);
-
-        history.push_back({ A, B, C, V });
-
-        // обновляем рабочий вектор: слот i → V, слоты j и k помечаем удалёнными
-        // (используем NaN как sentinel)
-        A = V;
-        B = { std::numeric_limits<double>::quiet_NaN(), 0 };
-        C = { std::numeric_limits<double>::quiet_NaN(), 0 };
+    for (size_t counter = 0; const auto& node : graph->nodes) {
+        if (node->GetType() != PointType::Steiner)
+            filteredNodes.emplace_back(counter, node);
+        counter++;
     }
 
-    // два оставшихся живых узла — прямое ребро
-    std::vector<CPoint> survivors;
-    for (const auto& p : work)
-        if (!std::isnan(p.x))
-            survivors.push_back(p);
+    auto combinations = getCombinations(filteredNodes.size() - 1);
+    for (const auto& [fir, sec] : combinations) {
+        auto firstP = filteredNodes.at(fir);
+        auto secondP = filteredNodes.at(sec);
 
-    if (survivors.size() != 2) return std::nullopt;
-    double totalLen = Dist(survivors[0], survivors[1]);
-
-    // ── фаза разворачивания ──
-    // Храним точки в deque чтобы ссылки не инвалидировались
-    std::deque<CPoint> steinerStorage;
-    std::vector<CPoint> steinerPoints;
-
-    for (int idx = (int)history.size() - 1; idx >= 0; --idx) {
-        auto& rec = history[idx];
-
-        const auto tryABC = ::Steiner::GetSteinerPoint(rec.A, rec.B, rec.C);
-        const auto tryBAC = tryABC ? std::nullopt : ::Steiner::GetSteinerPoint(rec.B, rec.A, rec.C);
-        const auto tryACB = tryBAC ? std::nullopt : ::Steiner::GetSteinerPoint(rec.A, rec.C, rec.B);
-
-        const auto* sOpt = tryABC ? &tryABC : (tryBAC ? &tryBAC : (tryACB ? &tryACB : nullptr));
-        if (!sOpt) return std::nullopt;
-
-        const CPoint S = sOpt->value().steinerPoint;
-        steinerPoints.push_back(S);
-
-        // длина: три ребра от S к A, B, C минус ребро виртуальной точки
-        // (виртуальное ребро V→следующий узел уже учтено в totalLen)
-        totalLen += Dist(S, rec.A) + Dist(S, rec.B) + Dist(S, rec.C);
-        totalLen -= Dist(rec.virtualPt, /* партнёр V в следующем слиянии */ rec.C);
-        // корректировка: убираем ребро V-C которое было в виртуальном дереве
+        Graph g;
+        g.mergeTask = {firstP.first, secondP.first};
+        g.nodes = graph->nodes;
+        g.edges = graph->edges;
+        g.totalLength = graph->totalLength;
+        result.push_back(GetShared(g));
     }
 
-    return MelzakResult{ steinerPoints, totalLen };
+    return result;
 }
 
-// ─── MST по всем вершинам (Прим)
+std::queue<std::shared_ptr<Graph>> BuildInitialQueueTasks(std::vector<std::pair<size_t, CPoint>>& terminals) {
+    Graph initialGraph;
+    std::queue<std::shared_ptr<Graph>> tasks = {};
 
-static Graph BuildGraph(const std::vector<std::pair<size_t, CPoint>>& terminals,
-                        const std::vector<CPoint>& steinerPts) {
-    Graph g;
-    for (const auto& [id, pt] : terminals)
-        g.nodes.push_back({ id, pt, NodeType::Terminal });
-    const size_t tCount = terminals.size();
-    for (size_t i = 0; i < steinerPts.size(); ++i)
-        g.nodes.push_back({ tCount + i, steinerPts[i], NodeType::SteinerPoint });
-
-    const size_t N = g.nodes.size();
-    if (N < 2) return g;
-
-    auto d = [&](size_t i, size_t j) {
-        return Dist(g.nodes[i].point, g.nodes[j].point);
-    };
-
-    std::vector<bool>   inMST(N, false);
-    std::vector<double> key(N, DBL_MAX);
-    std::vector<size_t> parent(N, SIZE_MAX);
-    key[0] = 0.0;
-
-    for (size_t iter = 0; iter < N; ++iter) {
-        size_t u = SIZE_MAX;
-        for (size_t i = 0; i < N; ++i)
-            if (!inMST[i] && (u == SIZE_MAX || key[i] < key[u]))
-                u = i;
-        inMST[u] = true;
-        if (parent[u] != SIZE_MAX) {
-            const double len = d(u, parent[u]);
-            g.edges.push_back({ g.nodes[parent[u]].id, g.nodes[u].id, len });
-            g.totalLength += len;
-        }
-        for (size_t v = 0; v < N; ++v)
-            if (!inMST[v] && d(u, v) < key[v]) {
-                key[v] = d(u, v), parent[v] = u;
-            }
+    for (const auto& [id, terminal] : terminals) {
+        Terminal p; p.SetPoint(terminal);
+        initialGraph.nodes.push_back(std::make_shared<Terminal>(p));
     }
-    return g;
+
+    auto mergeTasks = BuildAllPermutationsOfTask(GetShared(initialGraph));
+    for (const auto& task : mergeTasks) {
+        tasks.push(task);
+    }
+
+    return tasks;
 }
 
-// ─── публичная функция ────────────────────────────────────────
+std::shared_ptr<Graph> BuildGraph(const std::shared_ptr<Graph>& graph) {
+    Graph additionalGraph;
 
-Graph FindOptimalTree(std::vector<std::pair<size_t, CPoint>>& terminals) {
-    const size_t n = terminals.size();
-    if (n <= 2) return BuildGraph(terminals, {});
+    additionalGraph.nodes = graph->nodes;
+    additionalGraph.edges = graph->edges;
+    additionalGraph.totalLength = graph->totalLength;
 
-    std::vector<CPoint> pts;
-    for (const auto& [id, pt] : terminals) pts.push_back(pt);
+    additionalGraph.mergeTask = {0, 0};
 
-    const auto topologies = AllTopologies(n);
+    return std::make_shared<Graph>(additionalGraph);
+}
 
-    auto bestLen = DBL_MAX;
-    Graph  bestGraph;
+void EraseMergedPoints(const std::shared_ptr<Graph>& graph, const std::tuple<size_t, size_t>& mergeTask) {
+    auto [firstIdxP, secondIdxP] = mergeTask;
 
-    std::vector<size_t> perm(n);
-    std::iota(perm.begin(), perm.end(), 0);
+    if (firstIdxP > secondIdxP) {
+        graph->nodes.erase(graph->nodes.begin() + static_cast<ptrdiff_t>(firstIdxP));
+        graph->nodes.erase(graph->nodes.begin() + static_cast<ptrdiff_t>(secondIdxP));
+    }
+    else if (firstIdxP == secondIdxP) {
+        graph->nodes.erase(graph->nodes.begin() + static_cast<ptrdiff_t>(firstIdxP));
+    }
+    else {
+        graph->nodes.erase(graph->nodes.begin() + static_cast<ptrdiff_t>(secondIdxP));
+        graph->nodes.erase(graph->nodes.begin() + static_cast<ptrdiff_t>(firstIdxP));
+    }
+}
 
-    do {
-        std::vector<CPoint> permPts(n);
-        for (size_t i = 0; i < n; ++i) permPts[i] = pts[perm[i]];
+template<typename T>
+void EraseByPointer(const std::shared_ptr<Graph>& graph, const std::shared_ptr<T>& p) {
+    size_t counter = 0;
+    for (auto& node : graph->nodes) {
+        if (node == p) break;
+        counter++;
+    }
 
-        for (const auto& topo : topologies) {
-            auto res = MelzakFST(permPts, topo);
-            if (!res) continue;
+    graph->nodes.erase(graph->nodes.begin() + static_cast<ptrdiff_t>(counter));
+}
 
-            auto graph = BuildGraph(terminals, res->steinerPoints);
-            if (graph.totalLength < bestLen) {
-                bestLen   = graph.totalLength;
-                bestGraph = graph;
-            }
+void ComputeLengthsBy2Points(const std::vector<std::shared_ptr<Graph>> &graphs) {
+    for (const auto& graph : graphs) {
+        auto firstNode = graph->nodes.at(0);
+        auto secondNode = graph->nodes.at(1);
+
+        graph->totalLength = CVector(secondNode->GetPoint() - firstNode->GetPoint()).dist();
+    }
+}
+
+std::shared_ptr<Graph> FindTheBestGraphByLength(const std::vector<std::shared_ptr<Graph>> &graphs) {
+    std::shared_ptr<Graph> bestGraph;
+    auto length = DBL_MAX;
+
+    for (const auto& graph : graphs) {
+        if (graph->totalLength < length) {
+            length = graph->totalLength;
+            bestGraph = graph;
         }
-    } while (std::next_permutation(perm.begin() + 1, perm.end()));
-
-    if (bestLen == DBL_MAX)
-        return BuildGraph(terminals, {});
-
+    }
     return bestGraph;
 }
+
+void UnwrapPoint(std::vector<std::shared_ptr<IPoint>>& resp, std::shared_ptr<IPoint> p) {
+    if (p->GetType() == PointType::Terminal) {
+        resp.push_back(p);
+    }
+    else if (p->GetType() == PointType::Steiner) {
+        const auto sp = std::reinterpret_pointer_cast<SteinerPoint>(p);
+        resp.push_back(sp);
+        UnwrapPoint(resp, sp->GetChild(1));
+        UnwrapPoint(resp, sp->GetChild(2));
+        UnwrapPoint(resp, sp->GetChild(3));
+    }
+    else if (p->GetType() == PointType::Virtual) {
+        auto vp = std::reinterpret_pointer_cast<VirtualPoint>(p);
+        UnwrapPoint(resp, vp->GetUnwrapping());
+    }
+    else if (p->GetType() == PointType::Degenerated) {
+        auto dp = std::reinterpret_pointer_cast<DegeneratedPoint>(p);
+        resp.push_back(dp);
+        auto [p1, p2] = dp->GetUnwrapping();
+        UnwrapPoint(resp, p1);
+        UnwrapPoint(resp, p2);
+    }
+}
+
+std::shared_ptr<Graph> UnwrapGraph(const std::shared_ptr<Graph>& graph) {
+    if (graph->nodes.size() != 2)
+        throw std::invalid_argument("To unwrap graph there need to be just two points");
+
+    Graph unwrappedGraph;
+    std::vector<std::shared_ptr<IPoint>> unwrappedPoints;
+
+    UnwrapPoint(unwrappedPoints, graph->nodes.at(0));
+    UnwrapPoint(unwrappedPoints, graph->nodes.at(1));
+
+    for (const auto& p : unwrappedPoints)
+        unwrappedGraph.nodes.push_back(p);
+
+    return GetShared(unwrappedGraph);
+}
+
+std::shared_ptr<IPoint> HandleDegeneratedPoint(const std::shared_ptr<Graph>& newGraph, const std::shared_ptr<IPoint>& p1, const std::shared_ptr<IPoint>& p2, const std::shared_ptr<IPoint>& node) {
+    DegeneratedPoint dp;
+    switch (findMiddle(p1->GetPoint(), p2->GetPoint(), node->GetPoint())) {
+        case 1:
+            dp.SetPoint(p1->GetPoint());
+            dp.SetUnwrapping(p2, node);
+            EraseByPointer(newGraph, p2);
+            EraseByPointer(newGraph, node);
+            break;
+        case 2:
+            dp.SetPoint(p2->GetPoint());
+            dp.SetUnwrapping(p1, node);
+            EraseByPointer(newGraph, p1);
+            EraseByPointer(newGraph, node);
+            break;
+        case 3:
+            dp.SetPoint(node->GetPoint());
+            dp.SetUnwrapping(p1, p2);
+            EraseByPointer(newGraph, p1);
+            EraseByPointer(newGraph, p2);
+            break;
+        default:;
+    }
+    return GetShared(dp);
+}
+
+std::tuple<std::shared_ptr<IPoint>, std::shared_ptr<IPoint>> GetPointFromMergeTask(const std::shared_ptr<Graph>& g) {
+    auto [firstPIdx, secondPIdx] = g->mergeTask;
+    if (firstPIdx > g->nodes.size() || secondPIdx > g->nodes.size())
+        throw std::out_of_range("");
+
+    auto firstP = g->nodes.at(firstPIdx);
+    auto secondP = g->nodes.at(secondPIdx);
+    return std::make_tuple(firstP, secondP);
+}
+
+std::shared_ptr<Graph> FindOptimalTree(std::vector<std::pair<size_t, CPoint>>& terminals) {
+    auto tasks = BuildInitialQueueTasks(terminals);
+    std::vector<std::shared_ptr<Graph>> mergedGraphs;
+    while (!tasks.empty()) {
+        auto mergeTaskGraph = tasks.front();
+        tasks.pop();
+        auto [p1, p2] = GetPointFromMergeTask(mergeTaskGraph);
+
+        for (const auto& node : mergeTaskGraph->nodes) {
+            if (node == p1 || node == p2) continue;
+            Steiner::Point steinerP{};
+            auto newGraph = BuildGraph(mergeTaskGraph);
+
+            try {
+                steinerP = Steiner::GetSteinerPoint(p1->GetPoint(), p2->GetPoint(), node->GetPoint()).value();
+
+                SteinerPoint sp;
+                sp.SetPoint(steinerP.steinerPoint);
+                sp.SetChild(p1, p2, node);
+
+                VirtualPoint virP;
+                virP.SetUnwrapping(GetShared(sp));
+                virP.SetPoint(steinerP.from);
+
+                EraseMergedPoints(newGraph, mergeTaskGraph->mergeTask);
+                newGraph->nodes.push_back(std::make_shared<VirtualPoint>(virP));
+            }
+            catch (const OverlapNotExistError&) {continue;}
+            catch (const AngleNotValidError&) {
+                newGraph->nodes.push_back(HandleDegeneratedPoint(newGraph, p1, p2, node));
+            }
+
+            if (newGraph->nodes.size() < 3)
+                mergedGraphs.push_back(newGraph);
+            else {
+                auto permutations = BuildAllPermutationsOfTask(newGraph);
+                for (const auto& newTask : permutations)
+                    tasks.push(newTask);
+            }
+        }
+    }
+
+    ComputeLengthsBy2Points(mergedGraphs);
+    auto bestGraph = FindTheBestGraphByLength(mergedGraphs);
+    return UnwrapGraph(bestGraph);;
+};

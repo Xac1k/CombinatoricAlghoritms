@@ -8,6 +8,8 @@
 #include <complex>
 #include <variant>
 #include <cmath>
+#include <memory>
+#include <vector>
 
 #include "../../Drawer/shape/CCircle.h"
 
@@ -118,7 +120,14 @@ bool IsPointValidForSteiner(const CPoint& p, const CLineSegment& l) {
     return !(CompareWithEpsilon(p, l.GetStartPoint()) || CompareWithEpsilon(p, l.GetEndPoint()));
 }
 std::variant<int, CPoint> Steiner::FindOverlapLineAndCircle(const CLineSegment& l, const CCircle& c) {
-    const auto overlappingPoints = FindOverlaps(l, c);
+    std::variant<int, CPoint, std::tuple<CPoint, CPoint>> overlappingPoints;
+    try {
+        overlappingPoints = FindOverlaps(l, c);
+    }
+    catch (std::exception& e) {
+        return NO_POINTS_OF_OVERLAP;
+    }
+
     if (overlappingPoints.index() == 0)
         return NO_POINTS_OF_OVERLAP;
     if (overlappingPoints.index() == 1) {
@@ -143,42 +152,38 @@ double ComputeOrderedAngleBetweenVectors(const CVector &v1, const CVector &v2) {
     const auto det = v1.x * v2.y - v1.y * v2.x;
     return std::atan2(det, scalar) * 180 / M_PI;
 }
-std::tuple<CPoint, CPoint, CPoint> GetOrderedPoints(const Steiner::Point &steinerPoint) {
-    static CPoint s_startPoint = { 0, 0 };
+std::tuple<CPoint, CPoint, CPoint> GetOrderedPoints(const Steiner::Point& sp) {
+    const CPoint& S = sp.steinerPoint;
 
-    auto v1 = CVector(steinerPoint.p1 - s_startPoint);
-    auto v2 = CVector(steinerPoint.p2 - s_startPoint);
-    auto v3 = CVector(steinerPoint.p3 - s_startPoint);
-
-    std::vector<std::pair<CPoint, CVector>> vectors = {
-        {steinerPoint.p1, v1},
-        {steinerPoint.p2, v2},
-        {steinerPoint.p3, v3}
+    auto angle = [&](const CPoint& p) {
+        return std::atan2(p.y - S.y, p.x - S.x);
     };
 
-    std::ranges::sort(vectors, [](const std::pair<CPoint, CVector> &v1, const std::pair<CPoint, CVector> &v2) {
-        return v1.second.dist() < v2.second.dist();
+    std::vector<CPoint> pts = { sp.p1, sp.p2, sp.p3 };
+    std::sort(pts.begin(), pts.end(), [&](const CPoint& a, const CPoint& b) {
+        return angle(a) < angle(b);
     });
 
-    return std::make_tuple(vectors.at(0).first, vectors.at(1).first, vectors.at(2).first);
+    return { pts[0], pts[1], pts[2] };
 }
 int Sign(const double x) {
     return x < 0 ? -1 : 1;
 }
-bool Steiner::IsValidSteinerPoint(const Point &steinerPoint) {
+bool Steiner::IsValidSteinerPoint(const Point& steinerPoint) {
     auto [p1, p2, p3] = GetOrderedPoints(steinerPoint);
 
-    const auto lineTo1P = CVector(p1 - steinerPoint.steinerPoint);
-    const auto lineTo2P = CVector(p2 - steinerPoint.steinerPoint);
-    const auto lineTo3P = CVector(p3 - steinerPoint.steinerPoint);
+    const auto v1 = CVector(p1 - steinerPoint.steinerPoint);
+    const auto v2 = CVector(p2 - steinerPoint.steinerPoint);
+    const auto v3 = CVector(p3 - steinerPoint.steinerPoint);
 
-    const auto angleSide12 = ComputeOrderedAngleBetweenVectors(lineTo1P, lineTo2P);
-    const auto angleSide23 = ComputeOrderedAngleBetweenVectors(lineTo2P, lineTo3P);
-    const auto angleSide31 =  ComputeOrderedAngleBetweenVectors(lineTo3P, lineTo1P);
+    const auto a12 = ComputeOrderedAngleBetweenVectors(v1, v2);
+    const auto a23 = ComputeOrderedAngleBetweenVectors(v2, v3);
+    const auto a31 = ComputeOrderedAngleBetweenVectors(v3, v1);
 
-    if (Sign(angleSide12) == Sign(angleSide23) && Sign(angleSide23) == Sign(angleSide31))
-        return (angleSide12 <= 120 + EPSILON) && (angleSide23 <= 120 + EPSILON) && (angleSide31 <= 120 + EPSILON);
-    return false;
+    return a12 > 0 && a23 > 0 && a31 > 0
+        && a12 <= 120.0 + EPSILON
+        && a23 <= 120.0 + EPSILON
+        && a31 <= 120.0 + EPSILON;
 }
 
 std::optional<Steiner::Point>  Steiner::GetSteinerPoint(CPoint &p1, CPoint &p2, CPoint &p3, Side s) {
@@ -196,20 +201,38 @@ std::optional<Steiner::Point>  Steiner::GetSteinerPoint(CPoint &p1, CPoint &p2, 
             .steinerPoint = overlapPoint,
             .p1 = p1,
             .p2 = p2,
-            .p3 = p3
+            .p3 = p3,
+            .from = t.GetVertex(3),
         });
         if (isValid)
-            return std::optional<Steiner::Point>({overlapPoint, p1, p2, p3});
+            return std::optional<Steiner::Point>({overlapPoint, p1, p2, p3, t.GetVertex(3)});
+        throw AngleNotValidError();
     }
-    return std::nullopt;
+    throw OverlapNotExistError();
 }
 std::optional<Steiner::Point> Steiner::GetSteinerPoint(CPoint& p1, CPoint& p2, CPoint& p3) {
-    const auto variant1 = GetSteinerPoint(p1, p2, p3, Side::Left);
-    const auto variant2 = GetSteinerPoint(p1, p2, p3, Side::Right);
-
-    if (variant1 != std::nullopt)
+    try {
+        const auto variant1 = GetSteinerPoint(p1, p2, p3, Side::Left);
         return variant1;
-    if (variant2 != std::nullopt)
-        return variant2;
-    return std::nullopt;
+    }
+    catch (const OverlapNotExistError& e) {
+        try {
+            const auto variant2 = GetSteinerPoint(p1, p2, p3, Side::Right);
+            return variant2;
+        }
+        catch ([[maybe_unused]] const AngleNotValidError& e1) {
+            throw;
+        }
+        catch ([[maybe_unused]] const OverlapNotExistError& e2) {
+            throw;
+        }
+    }
+}
+
+std::optional<Steiner::Point> Steiner::GetSteinerPoint(std::shared_ptr<CPoint> p1, std::shared_ptr<CPoint> p2, std::shared_ptr<CPoint> p3) {
+    return GetSteinerPoint(*p1.get(), *p2.get(), *p3.get());
+}
+
+std::optional<Steiner::Point> Steiner::GetSteinerPoint(CPoint &&p1, CPoint &&p2, CPoint &&p3) {
+    return GetSteinerPoint(p1, p2, p3);
 }
