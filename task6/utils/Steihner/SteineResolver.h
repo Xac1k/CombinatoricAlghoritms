@@ -25,8 +25,8 @@ public:
     virtual ~IPoint() = default;
 
     virtual PointType GetType()=0;
-    [[nodiscard]] CPoint GetPoint() const;
-    void SetPoint(CPoint p);
+    [[nodiscard]] virtual CPoint GetPoint() const;
+    virtual void SetPoint(CPoint p);
 private:
     CPoint m_point = {0,0};
 };
@@ -64,7 +64,11 @@ public:
     PointType GetType() override { return PointType::Degenerated; }
     void SetUnwrapping(const SharedPoint &p1, const SharedPoint &p2);
     std::tuple<SharedPoint, SharedPoint> GetUnwrapping();
+    [[nodiscard]] CPoint GetPoint() const override;
+    void SetPoint(const SharedPoint &p);
+    [[nodiscard]] PointType GetTypeParent() const;
 private:
+    SharedPoint m_p;
     SharedPoint m_p1, m_p2;
 };
 

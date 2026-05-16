@@ -49,7 +49,7 @@ CPoint Steiner::FindCenterCircumscribedCircle(const CTriangle &t) {
 
     const double d = 2.0 * (x1*(y2 - y3) + x2*(y3 - y1) + x3*(y1 - y2));
 
-    if (std::abs(d) < 1e-6) {
+    if (std::abs(d) < 1e-3) {
         throw std::runtime_error("Points are collinear, cannot find circumscribed circle");
     }
 
@@ -215,7 +215,7 @@ std::optional<Steiner::Point> Steiner::GetSteinerPoint(CPoint& p1, CPoint& p2, C
         const auto variant1 = GetSteinerPoint(p1, p2, p3, Side::Left);
         return variant1;
     }
-    catch (const OverlapNotExistError& e) {
+    catch (const std::exception& e) {
         try {
             const auto variant2 = GetSteinerPoint(p1, p2, p3, Side::Right);
             return variant2;

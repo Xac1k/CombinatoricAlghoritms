@@ -1,7 +1,6 @@
-#pragma once
-
 #include "./SteineResolver.h"
 
+#include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <iostream>
@@ -67,6 +66,20 @@ void DegeneratedPoint::SetUnwrapping(const SharedPoint &p1, const SharedPoint &p
     m_p2 = p2;
 }
 
+CPoint DegeneratedPoint::GetPoint() const {
+    return m_p->GetPoint();
+}
+
+void DegeneratedPoint::SetPoint(const SharedPoint &p) {
+    m_p = p;
+}
+
+PointType DegeneratedPoint::GetTypeParent() const {
+    return m_p->GetType();
+}
+
+
+
 template <typename T>
 std::shared_ptr<T> GetShared(const T& item) {
     return std::make_shared<T>(item);
@@ -93,6 +106,9 @@ int findMiddle(const CPoint& p1, const CPoint& p2, const CPoint& p3) {
     if (a2 >= a1 && a2 >= a3) return 2;
     return 3;
 }
+
+
+
 
 std::vector<std::tuple<size_t, size_t>> getCombinations(size_t n) {
     if (n < 1) return {};
@@ -191,16 +207,43 @@ void EraseByPointer(const std::shared_ptr<Graph>& graph, const std::shared_ptr<T
     graph->nodes.erase(graph->nodes.begin() + static_cast<ptrdiff_t>(counter));
 }
 
+void ComputeLengthForDegeneratePoints(const std::shared_ptr<IPoint>& p, double& length) {
+    if (p->GetType() == PointType::Degenerated) {
+        auto dp = std::static_pointer_cast<DegeneratedPoint>(p);
+        auto [p1, p2] = dp->GetUnwrapping();
+
+        length += CVector(p1->GetPoint() - dp->GetPoint()).dist();
+        length += CVector(p2->GetPoint() - dp->GetPoint()).dist();
+
+        ComputeLengthForDegeneratePoints(p1, length);
+        ComputeLengthForDegeneratePoints(p2, length);
+    }
+    if (p->GetType() == PointType::Virtual) {
+        auto sp = std::static_pointer_cast<VirtualPoint>(p)->GetUnwrapping();
+        ComputeLengthForDegeneratePoints(sp, length);
+    }
+    if (p->GetType() == PointType::Steiner) {
+        auto st = std::static_pointer_cast<SteinerPoint>(p);
+
+        ComputeLengthForDegeneratePoints(st->GetChild(1), length);
+        ComputeLengthForDegeneratePoints(st->GetChild(2), length);
+        ComputeLengthForDegeneratePoints(st->GetChild(3), length);
+    }
+}
+
 void ComputeLengthsBy2Points(const std::vector<std::shared_ptr<Graph>> &graphs) {
+
     for (const auto& graph : graphs) {
         auto firstNode = graph->nodes.at(0);
         auto secondNode = graph->nodes.at(1);
-
         graph->totalLength = CVector(secondNode->GetPoint() - firstNode->GetPoint()).dist();
     }
 }
 
 std::shared_ptr<Graph> FindTheBestGraphByLength(const std::vector<std::shared_ptr<Graph>> &graphs) {
+    if (graphs.empty())
+        throw std::runtime_error("No graphs to compare");
+
     std::shared_ptr<Graph> bestGraph;
     auto length = DBL_MAX;
 
@@ -213,63 +256,23 @@ std::shared_ptr<Graph> FindTheBestGraphByLength(const std::vector<std::shared_pt
     return bestGraph;
 }
 
-void UnwrapPoint(std::vector<std::shared_ptr<IPoint>>& resp, std::shared_ptr<IPoint> p) {
-    if (p->GetType() == PointType::Terminal) {
-        resp.push_back(p);
-    }
-    else if (p->GetType() == PointType::Steiner) {
-        const auto sp = std::reinterpret_pointer_cast<SteinerPoint>(p);
-        resp.push_back(sp);
-        UnwrapPoint(resp, sp->GetChild(1));
-        UnwrapPoint(resp, sp->GetChild(2));
-        UnwrapPoint(resp, sp->GetChild(3));
-    }
-    else if (p->GetType() == PointType::Virtual) {
-        auto vp = std::reinterpret_pointer_cast<VirtualPoint>(p);
-        UnwrapPoint(resp, vp->GetUnwrapping());
-    }
-    else if (p->GetType() == PointType::Degenerated) {
-        auto dp = std::reinterpret_pointer_cast<DegeneratedPoint>(p);
-        resp.push_back(dp);
-        auto [p1, p2] = dp->GetUnwrapping();
-        UnwrapPoint(resp, p1);
-        UnwrapPoint(resp, p2);
-    }
-}
-
-std::shared_ptr<Graph> UnwrapGraph(const std::shared_ptr<Graph>& graph) {
-    if (graph->nodes.size() != 2)
-        throw std::invalid_argument("To unwrap graph there need to be just two points");
-
-    Graph unwrappedGraph;
-    std::vector<std::shared_ptr<IPoint>> unwrappedPoints;
-
-    UnwrapPoint(unwrappedPoints, graph->nodes.at(0));
-    UnwrapPoint(unwrappedPoints, graph->nodes.at(1));
-
-    for (const auto& p : unwrappedPoints)
-        unwrappedGraph.nodes.push_back(p);
-
-    return GetShared(unwrappedGraph);
-}
-
 std::shared_ptr<IPoint> HandleDegeneratedPoint(const std::shared_ptr<Graph>& newGraph, const std::shared_ptr<IPoint>& p1, const std::shared_ptr<IPoint>& p2, const std::shared_ptr<IPoint>& node) {
     DegeneratedPoint dp;
     switch (findMiddle(p1->GetPoint(), p2->GetPoint(), node->GetPoint())) {
         case 1:
-            dp.SetPoint(p1->GetPoint());
+            dp.SetPoint(p1);
             dp.SetUnwrapping(p2, node);
             EraseByPointer(newGraph, p2);
             EraseByPointer(newGraph, node);
             break;
         case 2:
-            dp.SetPoint(p2->GetPoint());
+            dp.SetPoint(p2);
             dp.SetUnwrapping(p1, node);
             EraseByPointer(newGraph, p1);
             EraseByPointer(newGraph, node);
             break;
         case 3:
-            dp.SetPoint(node->GetPoint());
+            dp.SetPoint(node);
             dp.SetUnwrapping(p1, p2);
             EraseByPointer(newGraph, p1);
             EraseByPointer(newGraph, p2);
@@ -288,6 +291,84 @@ std::tuple<std::shared_ptr<IPoint>, std::shared_ptr<IPoint>> GetPointFromMergeTa
     auto secondP = g->nodes.at(secondPIdx);
     return std::make_tuple(firstP, secondP);
 }
+
+int CountVirtualPoints(const std::shared_ptr<IPoint>& p1, const std::shared_ptr<IPoint>& p2, const std::shared_ptr<IPoint>& p3) {
+    int res = 0;
+    if (p1->GetType() == PointType::Virtual) res+=1;
+    if (p2->GetType() == PointType::Virtual) res+=1;
+    if (p3->GetType() == PointType::Virtual) res+=1;
+
+    return res;
+};
+
+std::tuple<std::shared_ptr<IPoint>, std::shared_ptr<IPoint>> GetNotVirtual(const std::shared_ptr<IPoint>& p1, const std::shared_ptr<IPoint>& p2, const std::shared_ptr<IPoint>& p3) {
+    if (p1->GetType() == PointType::Virtual) {
+        return std::make_tuple(p2, p3);
+    }
+    if (p2->GetType() == PointType::Virtual) {
+        return std::make_tuple(p1, p3);
+    }
+    if (p3->GetType() == PointType::Virtual) {
+        return std::make_tuple(p1, p2);
+    }
+    throw std::logic_error("GetNotVirtual: all points are non-virtual");
+}
+
+void UnwrapPoint(std::vector<Edge>& edges, std::vector<std::shared_ptr<IPoint>>& resp, std::shared_ptr<IPoint> p) {
+    if (p->GetType() == PointType::Terminal) {
+        resp.push_back(p);
+    }
+    else if (p->GetType() == PointType::Steiner) {
+        const auto sp = std::static_pointer_cast<SteinerPoint>(p);
+        resp.push_back(sp);
+        if (const int n = CountVirtualPoints(sp->GetChild(1), sp->GetChild(2), sp->GetChild(3)); n != 0) {
+            resp.pop_back();
+            if (n == 1) {
+                auto [p1, p2] = GetNotVirtual(sp->GetChild(1), sp->GetChild(2), sp->GetChild(3));
+                Edge e;
+                e.SetStartPoint(p1->GetPoint());
+                e.SetEndPoint(p2->GetPoint());
+                edges.push_back(e);
+                std::cout<<"SHANTUNG";
+            }
+        }
+
+        UnwrapPoint(edges, resp, sp->GetChild(1));
+        UnwrapPoint(edges, resp, sp->GetChild(2));
+        UnwrapPoint(edges, resp, sp->GetChild(3));
+    }
+    else if (p->GetType() == PointType::Virtual) {
+        auto vp = std::static_pointer_cast<VirtualPoint>(p);
+        UnwrapPoint(edges, resp, vp->GetUnwrapping());
+    }
+    else if (p->GetType() == PointType::Degenerated) {
+        auto dp = std::static_pointer_cast<DegeneratedPoint>(p);
+        resp.push_back(dp);
+        auto [p1, p2] = dp->GetUnwrapping();
+        UnwrapPoint(edges, resp, p1);
+        UnwrapPoint(edges, resp, p2);
+    }
+}
+
+std::shared_ptr<Graph> UnwrapGraph(const std::shared_ptr<Graph>& graph) {
+    if (graph->nodes.size() != 2)
+        throw std::invalid_argument("To unwrap graph there need to be just two points");
+
+    Graph unwrappedGraph;
+    std::vector<std::shared_ptr<IPoint>> unwrappedPoints;
+    std::vector<Edge> edges;
+
+    UnwrapPoint(edges, unwrappedPoints, graph->nodes.at(0));
+    UnwrapPoint(edges, unwrappedPoints, graph->nodes.at(1));
+
+    for (const auto& p : unwrappedPoints)
+        unwrappedGraph.nodes.push_back(p);
+
+    unwrappedGraph.edges = edges;
+    return GetShared(unwrappedGraph);
+}
+
+
 
 std::shared_ptr<Graph> FindOptimalTree(std::vector<std::pair<size_t, CPoint>>& terminals) {
     auto tasks = BuildInitialQueueTasks(terminals);
