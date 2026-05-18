@@ -314,6 +314,7 @@ std::tuple<std::shared_ptr<IPoint>, std::shared_ptr<IPoint>> GetNotVirtual(const
     throw std::logic_error("GetNotVirtual: all points are non-virtual");
 }
 
+
 void UnwrapPoint(std::vector<Edge>& edges, std::vector<std::shared_ptr<IPoint>>& resp, std::shared_ptr<IPoint> p) {
     if (p->GetType() == PointType::Terminal) {
         resp.push_back(p);
@@ -322,14 +323,17 @@ void UnwrapPoint(std::vector<Edge>& edges, std::vector<std::shared_ptr<IPoint>>&
         const auto sp = std::static_pointer_cast<SteinerPoint>(p);
         resp.push_back(sp);
         if (const int n = CountVirtualPoints(sp->GetChild(1), sp->GetChild(2), sp->GetChild(3)); n != 0) {
-            resp.pop_back();
             if (n == 1) {
+                resp.pop_back();
                 auto [p1, p2] = GetNotVirtual(sp->GetChild(1), sp->GetChild(2), sp->GetChild(3));
                 Edge e;
                 e.SetStartPoint(p1->GetPoint());
                 e.SetEndPoint(p2->GetPoint());
                 edges.push_back(e);
-                std::cout<<"SHANTUNG";
+                std::cout<<"AHTUNG";
+            }
+            if (n == 2) {
+                resp.pop_back();
             }
         }
 

@@ -70,12 +70,12 @@ int main(int argc, char *argv[]) {
                         if (dp->GetTypeParent() != PointType::Terminal) continue;
                         auto [p1, p2] = dp->GetUnwrapping();
                         win.FillCircle(dp->GetPoint(), mainRadius, RED);
-                        //if (p1->GetType() != PointType::Virtual) {
+                        if (p1->GetType() != PointType::Virtual) {
                             win.DrawLine(dp->GetPoint(), p1->GetPoint(), EGGPLANT, 2);
-                        //};
-                        //if (p2->GetType() != PointType::Virtual) {
+                        };
+                        if (p2->GetType() != PointType::Virtual) {
                             win.DrawLine(dp->GetPoint(), p2->GetPoint(), EGGPLANT, 2);
-                        //};
+                        };
                     }
                 }
             }
